@@ -1,97 +1,80 @@
-from sqlalchemy import create_engine
-from sqlalchemy.schema import Table
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from functools import singledispatchmethod
+from msilib.schema import Property
+from typing import Any, Dict
 import requests
 import json
+import sqlite3
 
 class Users:
+    username: str
+    login: str
+    email: str
+    password: str
 
-    def __init__(self, filepath: str) -> None:
-        """Инициализация базы данных.
-        Аргументы:
-            filepath: Путь к базе данных."""
+    def create_account(username, password, email):
 
-        self.__con = connect(filepath)
-        self.__cur = self.__con.cursor()
+            conn = sqlite3.connect('mydatabase.db')
 
-    def sql(
-            self,
-            sql_text: str,
-            format_=None,
-            noresult: bool = False
-    ):
-        """Выполняет SQL код.
-        Аргументы:
-            sql_text: SQL код.
-            format_: Заменители '?' в SQL коде.
-            noresult: Если включено, то результатом будет булевое значение.
-        Возвращаемое значение:
-            bool: Если включено noresult, возвращает True, если результат
-        выполнения SQL кода пустой, иначе False.
-            list: Массив с результатами.
-            tuple: Единственный результат."""
+            cur = conn.cursor()
 
-        code = ""
-        results = []
+            cur.execute("INSERT INTO my_table (username, password, email) Values (?, ?, ?)",
+                        (username, password, email))
 
-        if format_ is None:
-            format_ = []
-        else:
-            format_ = format_[::-1]
+            conn.commit()
 
-        try:
-            sql_text = sql_text[:sql_text.index("--")]
-        except ValueError:
-            pass
+            conn.close()
 
-        for line in sql_text.split("\n"):
-            stripped_line = line.strip()
-
-            if len(stripped_line) == 0:
-                continue
-
-            code += stripped_line
-
-            if stripped_line.endswith(";"):
-                formats = [format_.pop() for _ in range(len(format_))]
-
-                cursor = self.__cur.execute(code, tuple(formats))
-                results.append(cursor.fetchall())
-                code = ""
-
-        self.__con.commit()
-
-        if noresult:
-            return all(len(result) == 0 for result in results)
-
-        if len(results) == 1:
-            return results[0]
-
-        return results
-
-    def create_account(self, name: str, password: str):
+            if cur.lastrowid is not None:
+                return cur.lastrowid
+            else:
+                return None
         """Создаёт аккаунт.
         Аргументы:
-            name: Логин аккаунта.
-            password:Пароль от аккаунта.
-        Возвращаемое значение: Статус выполнения, id в случае успеха."""
-
-    def login_account(self, name: str, password: str):
-        """Входит в аккаунт.
-        Аргументы:
-            name: Логин аккаунта.
+            username: Логин аккаунта.
             password: Пароль от аккаунта.
         Возвращаемое значение: Статус выполнения, id в случае успеха."""
 
-        result = self.sql("SELECT id FROM users WHERE name = ?;", [username])
+    def login_account(self, username: str, password: str):
+        """Входит в аккаунт.
+                Аргументы:
+                    username: Логин аккаунта.
+                    password: Пароль от аккаунта.
+                Возвращаемое значение: Статус выполнения, id в случае успеха."""
+        conn = sqlite3.connect('mydatabase.db')
 
-        if len(result) == 0:
+        cur = conn.cursor()
+
+        cur.execute("SELECT username, password, FROM my_table WHERE username = ? AND password = ?",
+                    (username, password))
+        results = cur.fetchone()
+
+        if results is not None and results[0] == username and results[1] == password:
+            return True
+        else:
             return False
 
-        return [result[0][0], username]
+    def search_user(request, user_name):
+        conn = sqlite3.connect('messaging.db')
+        cur = conn.cursor()
 
-    def find_user(self, username: str):
+        cur.execute(f"""
+                    SELECT id, from, to, subject, body
+                    FROM messages
+                    WHERE user_name = ?""", (user_name,))
+
+        results = cur.fetchall()
+
+        if results:
+            id = results[0][0]
+            from = results[0][1]
+            to = results[0][2]
+            subject = results[0][3]
+            body = results[0][4]
+
+            return 'You were not able to find a user with that name.'
+
+        cur.close()
+        conn.close()
         """Ищет пользователя по username.
         Аргументы:
             username: Имя пользователя.
@@ -99,58 +82,81 @@ class Users:
             False: Пользователь не найден.
             list[int, str]: ID пользователя и его имя."""
 
-    def send_message(self, login: str, receiver: int, message: str, sender, token) -> bool:
-        """Создаёт запись в базе данных о сообщении."""
+    def send_message(request, user_name, to_name, subject, body):
+        conn = sqlite3.connect('messaging.db')
+        cur = conn.cursor()
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+        cur.execute(f"""
+                INSERT INTO messages (from, to, subject, body)
+                VALUES (?, ?, ?, ?)""", (user_name, to_name, subject, body))
 
-        payload = json.dumps({
-            "type": "message",
-            "From": sender,
-            "To": receiver,
-            "Text": message
-        })
+        conn.commit()
 
-        response = requests.post(
-            f"{base_url}/send-message",
-            headers=headers,
-            data=payload
-        )
-        if response.status_code != 200:
-            print(f"Error: {response.status_code}: {response.text}")
-            return
+        cur.close()
+        conn.close()
 
-        print(f"Сообщение отправлено!")
 
 Base = declarative_base()
 
 class Messages(Base):
-    __tablename__ = 'messages'
+        def __init__(self, from, to, subject, body):
+            self.
+            from = from
+            self.to = to
+            self.subject = subject
+            self.body = body
 
-    id = Column(Integer, primary_key=True)
-    sender = Column(Str)
-    receiver = Column(Str)
-    text = Column(Str)
+        def create(self):
+            con = sqlite3.connect('messaging.db')
+            cur = con.cursor()
+            try:
+                cur.execute("""CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from INTEGER NOT NULL,
+                    to INTEGER NOT NULL,
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL
+                )""")
+                cur.execute("""INSERT INTO messages (from, to, subject, body) VALUES (?, ?, ?, ?)""",
+                self.from, self.to, self.subject, self.body)
+                con.commit()
 
-    """Создает диспетчер сеансов для обработки подключения к базе данных."""
+            except sqlite3.Exception as ex:
+                if ex.errno != None:
+                    # обработка конкретной ошибки
+                    if ex.errno == 1067:
+                        # ошибка при вставке данных
+                        cur.execute("""INSERT INTO messages (from, to, subject, body)
+                        VALUES (?, ?, ?, ?""",
+                                    (self.from, self.to, self.subject, self.body)
+                                    )
+                        con.commit()
 
-    engine = create_engine('sqlite:///messages.db')
-    Session = sessionmaker(bind=engine)
+                return None
+            except Exception as ex:
+                # обработка непредвиденных ошибок
+                return None
 
-    def persist_message(message: Message):
-        """Создаёт сеанс."""
-        with Session() as session:
-            """Создаёт объект сообщения и добавляет его в базу данных."""
+        def read(self):
+            con = sqlite3.connect('messaging.db')
+            cur = con.cursor()
+            cur.execute("""SELECT * FROM messages WHERE id = ?""", self.id)
+            return cur.fetchone()
 
-            msg = Messages(sender = message.sender, receiver = message.receiver, text = message.text)
-            session.add(msg)
-            session.commit()
+        def update(self):
+            con = sqlite3.connect('messaging.db')
+            cur = con.cursor()
+            cur.execute("""UPDATE messages SET
+            from = ?, to = ?, subject = ?, body = ? WHERE
+            id = ?""",self.from, self.to, self.subject, self.body)
+            con.commit()
 
-    def close(self) -> None:
-        """Закрывает базу данных."""
+        def delete(self):
+            con = sqlite3.connect('messaging.db')
+            cur = con.cursor()
+            cur.execute("DELETE FROM messages WHERE id = ?", self.id)
+            con.commit()
+
 
 class Network:
 
@@ -161,17 +167,9 @@ class Network:
     def encode_message(message) -> bytes:
         """Превращает объекты в байты."""
 
-        return self.__aes.encrypt(dumps(
-            message,
-            separators=(",", ":"),
-            ensure_ascii=False
-        ))
-
     @staticmethod
     def decode_message(message: bytes):
         """Превращает байты в объекты."""
-
-        return loads(self.__aes.decrypt(message))
 
     def encrypion_message(message: str):
         """Кодиует сообщение message с помощью шифра."""
